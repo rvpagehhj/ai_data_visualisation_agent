@@ -86,15 +86,24 @@ def chat_with_llm(e2b_code_interpreter: Sandbox, user_message: str, dataset_path
             return None, response_message.content
 
 def upload_dataset(code_interpreter: Sandbox, uploaded_file) -> str:
-    safe_filename = "dataset.xlsx"  # 使用简单的英文文件名
+    safe_filename = "dataset.xlsx"
     dataset_path = f"./{safe_filename}"
-    
+
     try:
-        code_interpreter.files.write(dataset_path, uploaded_file)
+        # 重置文件指针并读取内容
+        uploaded_file.seek(0)
+        file_content = uploaded_file.read()
+
+        # 写入沙箱环境
+        code_interpreter.files.write(dataset_path, file_content)
+
+        # 验证文件已正确写入
+        # 确保文件句柄已关闭后再进行后续操作
         return dataset_path
     except Exception as error:
         st.error(f"Error during file upload: {error}")
         raise error
+
 
 
 def main():
@@ -138,8 +147,17 @@ def main():
     #uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
     if uploaded_file is not None:
+        uploaded_file.seek(0)
+
+        # 读取文件内容副本用于预览
+        file_content_for_preview = uploaded_file.read()
+
+        # 创建副本用于pandas读取
+        from io import BytesIO
+        preview_file = BytesIO(file_content_for_preview)
+
         # Display dataset with toggle
-        df = pd.read_excel(uploaded_file)
+        df = pd.read_excel(preview_file)
         st.write("Dataset:")
         show_full = st.checkbox("Show full dataset")
         if show_full:
@@ -147,32 +165,36 @@ def main():
         else:
             st.write("Preview (first 5 rows):")
             st.dataframe(df.head())
+
         # Query input
         query = st.text_area("What would you like to know about your data?",
-                            "对数据进行可视化分析")
-        
+                             "对数据进行可视化分析")
+
         if st.button("Analyze"):
             if not st.session_state.deepseek_api_key or not st.session_state.e2b_api_key:
                 st.error("Please enter both API keys in the sidebar.")
             else:
+                # 重新设置文件指针以供上传使用
+                uploaded_file.seek(0)
+
                 with Sandbox(api_key=st.session_state.e2b_api_key) as code_interpreter:
                     # Upload the dataset
                     dataset_path = upload_dataset(code_interpreter, uploaded_file)
-                    
+
                     # Pass dataset_path to chat_with_llm
                     code_results, llm_response = chat_with_llm(code_interpreter, query, dataset_path)
-                    
+
                     # Display LLM's text response
                     st.write("AI Response:")
                     st.write(llm_response)
-                    
+
                     # Display results/visualizations
                     if code_results:
                         for result in code_results:
                             if hasattr(result, 'png') and result.png:  # Check if PNG data is available
                                 # Decode the base64-encoded PNG data
                                 png_data = base64.b64decode(result.png)
-                                
+
                                 # Convert PNG data to an image and display it
                                 image = Image.open(BytesIO(png_data))
                                 st.image(image, caption="Generated Visualization", use_container_width=False)
@@ -184,7 +206,7 @@ def main():
                             elif isinstance(result, (pd.DataFrame, pd.Series)):
                                 st.dataframe(result)
                             else:
-                                st.write(result)  
+                                st.write(result)
 
 if __name__ == "__main__":
     main()
