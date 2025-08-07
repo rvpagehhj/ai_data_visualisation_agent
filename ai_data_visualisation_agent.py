@@ -86,7 +86,8 @@ def chat_with_llm(e2b_code_interpreter: Sandbox, user_message: str, dataset_path
             return None, response_message.content
 
 def upload_dataset(code_interpreter: Sandbox, uploaded_file) -> str:
-    dataset_path = f"./{uploaded_file.name}"
+    safe_filename = "dataset.xlsx"  # 使用简单的英文文件名
+    dataset_path = f"./{safe_filename}"
     
     try:
         code_interpreter.files.write(dataset_path, uploaded_file)
